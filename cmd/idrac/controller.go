@@ -1,25 +1,64 @@
 package main
 
 import (
+	"io"
 	"log"
 	"net/http"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/baggage"
+	"go.opentelemetry.io/otel/exporters/stdout"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/semconv"
+	"go.opentelemetry.io/otel/trace"
 )
 
-// Define a home handler function which writes a byte slice containing
-// "Hello from Snippetbox" as the response body.
-func home(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("Hello from Snippetbox"))
+func initTracer() {
+	// Create stdout exporter to be able to retrieve
+	// the collected spans.
+	exporter, err := stdout.NewExporter(stdout.WithPrettyPrint())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// For the demonstration, use sdktrace.AlwaysSample sampler to sample all traces.
+	// In a production application, use sdktrace.ProbabilitySampler with a desired probability.
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithSyncer(exporter),
+		sdktrace.WithResource(resource.NewWithAttributes(semconv.ServiceNameKey.String("ExampleService"))),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
 }
+
 func main() {
-	// Use the http.NewServeMux() function to initialize a new servemux, then
-	// register the home function as the handler for the "/" URL pattern.
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", home)
-	// Use the http.ListenAndServe() function to start a new web server. We pas
-	// two parameters: the TCP network address to listen on (in this case ":4000
-	// and the servemux we just created. If http.ListenAndServe() returns an er
-	// we use the log.Fatal() function to log the error message and exit.
-	log.Println("Starting server on :4000")
-	err := http.ListenAndServe(":4000", mux)
-	log.Fatal(err)
+	initTracer()
+
+	uk := attribute.Key("username")
+
+	helloHandler := func(w http.ResponseWriter, req *http.Request) {
+		ctx := req.Context()
+		span := trace.SpanFromContext(ctx)
+		username := baggage.Value(ctx, uk)
+		span.AddEvent("handling this...", trace.WithAttributes(uk.String(username.AsString())))
+
+		_, _ = io.WriteString(w, "Hello, world!\n")
+	}
+
+	otelHandler := otelhttp.NewHandler(http.HandlerFunc(helloHandler), "Hello")
+
+	http.Handle("/hello", otelHandler)
+	err := http.ListenAndServe(":8080", nil)
+	if err != nil {
+		panic(err)
+	}
 }
