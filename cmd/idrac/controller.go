@@ -8,7 +8,6 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/trace/jaeger"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/semconv"
@@ -36,7 +35,7 @@ func initTracer() {
 		log.Fatal(err)
 	}
 	otel.SetTracerProvider(tp)
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
+	// otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
 }
 
 func main() {
@@ -44,8 +43,7 @@ func main() {
 
 	otelHandler := otelhttp.NewHandler(http.HandlerFunc(helloHandler), "Hello")
 
-	// http.HandleFunc("/hello", helloHandler)
-	http.Handle	("/hello", otelHandler)
+	http.Handle("/hello", otelHandler)
 	err := http.ListenAndServe(":8080", nil)
 	if err != nil {
 		panic(err)
@@ -54,7 +52,7 @@ func main() {
 
 func helloHandler(w http.ResponseWriter, req *http.Request) {
 	// get global Trace Provider
-	tr := otel.GetTracerProvider().Tracer("Alochym")
+	tr := otel.GetTracerProvider().Tracer("A")
 
 	// get context from http request
 	ctx := req.Context()
