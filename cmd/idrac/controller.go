@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/trace/jaeger"
@@ -50,7 +51,9 @@ func initTracer() {
 func main() {
 	initTracer()
 
-	http.HandleFunc("/hello", helloHandler)
+	// using auto-instrument opentelemetry
+	http.Handle("/hello", otelhttp.NewHandler(http.HandlerFunc(helloHandler), "root"))
+
 	err := http.ListenAndServe(":8080", nil)
 	if err != nil {
 		panic(err)
@@ -58,20 +61,11 @@ func main() {
 }
 
 func helloHandler(w http.ResponseWriter, req *http.Request) {
-	// get global Trace Provider
-	tr := otel.GetTracerProvider().Tracer("A")
-
 	// get context from http request
 	ctx := req.Context()
 
-	// start tracing
-	span_ctx, sp := tr.Start(ctx, "helloHandler")
-
 	// passing span context to other func
-	usingCtx(span_ctx)
-
-	// close tracing
-	defer sp.End()
+	usingCtx(ctx)
 
 	// http response
 	_, _ = io.WriteString(w, "Hello, world!\n")
